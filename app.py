@@ -1,6 +1,6 @@
 import json
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 
 
 def format_json():
@@ -100,10 +100,84 @@ def set_output(content: str):
     output_text.insert(tk.END, content)
 
 
+def view_tree():
+    """Open a tree view window for the output JSON."""
+    output_data = output_text.get("1.0", tk.END).strip()
+    if not output_data:
+        messagebox.showwarning("No Output", "There is no output to view.")
+        return
+    try:
+        parsed = json.loads(output_data)
+    except json.JSONDecodeError as exc:
+        show_json_error(exc)
+        return
+
+    tree_window = tk.Toplevel(root)
+    tree_window.title("JSON Tree View")
+    tree_window.geometry("600x500")
+
+    tree = ttk.Treeview(tree_window)
+    tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    def insert_node(parent, key, value):
+        if isinstance(value, dict):
+            node_id = tree.insert(parent, tk.END, text=str(key), open=False)
+            for child_key, child_value in value.items():
+                insert_node(node_id, child_key, child_value)
+        elif isinstance(value, list):
+            node_id = tree.insert(parent, tk.END, text=str(key), open=False)
+            for index, item in enumerate(value):
+                insert_node(node_id, f"[{index}]", item)
+        else:
+            display = f"{key}: {value}"
+            tree.insert(parent, tk.END, text=display, open=False)
+
+    insert_node("", "root", parsed)
+
+
+def apply_theme(theme_name: str):
+    """Apply a simple theme to the UI."""
+    if theme_name == "Dark":
+        background = "#1e1e1e"
+        foreground = "#f5f5f5"
+        frame_bg = "#252526"
+        button_bg = "#2d2d30"
+    else:
+        background = "#ffffff"
+        foreground = "#000000"
+        frame_bg = "#f0f0f0"
+        button_bg = "#f0f0f0"
+
+    root.configure(bg=frame_bg)
+    button_frame.configure(bg=frame_bg)
+    text_frame.configure(bg=frame_bg)
+    input_frame.configure(bg=frame_bg, fg=foreground)
+    output_frame.configure(bg=frame_bg, fg=foreground)
+    theme_label.configure(bg=frame_bg, fg=foreground)
+
+    for button in button_frame.winfo_children():
+        if isinstance(button, tk.Button):
+            button.configure(bg=button_bg, fg=foreground, activebackground=frame_bg)
+
+    for button in output_button_frame.winfo_children():
+        if isinstance(button, tk.Button):
+            button.configure(bg=button_bg, fg=foreground, activebackground=frame_bg)
+
+    input_text.configure(bg=background, fg=foreground, insertbackground=foreground)
+    output_text.configure(bg=background, fg=foreground, insertbackground=foreground)
+
+
+def on_close():
+    """Handle application close event."""
+    if messagebox.askokcancel("Quit", "Do you want to close the JSON Formatter?"):
+        root.destroy()
+
+
 root = tk.Tk()
 root.title("JSON Formatter")
-root.geometry("1000x600")
+root.geometry("1100x600")
 root.minsize(900, 500)
+root.protocol("WM_DELETE_WINDOW", on_close)
 
 # Button bar
 button_frame = tk.Frame(root)
@@ -111,41 +185,83 @@ button_frame.pack(fill=tk.X, padx=10, pady=10)
 
 format_button = tk.Button(button_frame, text="Format / Beautify", command=format_json)
 minify_button = tk.Button(button_frame, text="Minify", command=minify_json)
-copy_button = tk.Button(button_frame, text="Copy Output", command=copy_output)
 clear_button = tk.Button(button_frame, text="Clear", command=clear_text)
 load_button = tk.Button(button_frame, text="Load from File (.json)", command=load_from_file)
 save_button = tk.Button(button_frame, text="Save Output to File", command=save_output_to_file)
+tree_button = tk.Button(button_frame, text="Tree View", command=view_tree)
 
 format_button.pack(side=tk.LEFT, padx=5)
 minify_button.pack(side=tk.LEFT, padx=5)
-copy_button.pack(side=tk.LEFT, padx=5)
 clear_button.pack(side=tk.LEFT, padx=5)
 load_button.pack(side=tk.LEFT, padx=5)
 save_button.pack(side=tk.LEFT, padx=5)
+tree_button.pack(side=tk.LEFT, padx=5)
 
-# Text areas
+theme_label = tk.Label(button_frame, text="Theme:")
+theme_label.pack(side=tk.LEFT, padx=(20, 5))
+theme_choice = tk.StringVar(value="Light")
+theme_menu = ttk.Combobox(
+    button_frame,
+    textvariable=theme_choice,
+    values=["Light", "Dark"],
+    width=8,
+    state="readonly",
+)
+theme_menu.pack(side=tk.LEFT, padx=5)
+
+# Text areas with adjustable pane
 text_frame = tk.Frame(root)
 text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
 
-input_frame = tk.LabelFrame(text_frame, text="Input JSON")
-output_frame = tk.LabelFrame(text_frame, text="Formatted Output")
+paned = tk.PanedWindow(text_frame, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
+paned.pack(fill=tk.BOTH, expand=True)
 
-input_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-output_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
+input_frame = tk.LabelFrame(paned, text="Input JSON")
+output_frame = tk.LabelFrame(paned, text="Formatted Output")
+
+paned.add(input_frame, stretch="always")
+paned.add(output_frame, stretch="always")
+
+output_text_frame = tk.Frame(output_frame)
+
+output_button_frame = tk.Frame(output_frame)
+output_button_frame.pack(fill=tk.X, padx=5, pady=5)
+
+copy_button = tk.Button(output_button_frame, text="Copy Output", command=copy_output)
+fold_button = tk.Button(
+    output_button_frame,
+    text="Fold Output",
+    command=lambda: output_text_frame.pack_forget(),
+)
+unfold_button = tk.Button(
+    output_button_frame,
+    text="Unfold Output",
+    command=lambda: output_text_frame.pack(fill=tk.BOTH, expand=True),
+)
+
+copy_button.pack(side=tk.LEFT, padx=5)
+fold_button.pack(side=tk.LEFT, padx=5)
+unfold_button.pack(side=tk.LEFT, padx=5)
 
 input_scrollbar = tk.Scrollbar(input_frame)
 input_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-output_scrollbar = tk.Scrollbar(output_frame)
-output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
 input_text = tk.Text(input_frame, wrap=tk.NONE, yscrollcommand=input_scrollbar.set)
-output_text = tk.Text(output_frame, wrap=tk.NONE, yscrollcommand=output_scrollbar.set)
-
 input_text.pack(fill=tk.BOTH, expand=True)
-output_text.pack(fill=tk.BOTH, expand=True)
 
 input_scrollbar.config(command=input_text.yview)
+
+output_text_frame.pack(fill=tk.BOTH, expand=True)
+
+output_scrollbar = tk.Scrollbar(output_text_frame)
+output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+output_text = tk.Text(output_text_frame, wrap=tk.NONE, yscrollcommand=output_scrollbar.set)
+output_text.pack(fill=tk.BOTH, expand=True)
+
 output_scrollbar.config(command=output_text.yview)
+
+theme_menu.bind("<<ComboboxSelected>>", lambda event: apply_theme(theme_choice.get()))
+apply_theme(theme_choice.get())
 
 root.mainloop()
